@@ -4,7 +4,7 @@ project(lc_gins VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_BUILD_TYPE "Debug")
 
 find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN_INCLUDE_DIR})
+include_directories(/usr/local/include/eigen3)
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 

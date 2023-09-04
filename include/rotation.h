@@ -75,7 +75,8 @@ public:
                                   Eigen::AngleAxisd(euler[0], Eigen::Vector3d::UnitX()));
     }
 
-    Eigen::Quaterniond rotvec2quaternion(const Eigen::Vector3d &rotvec) {
+    Eigen::Quaterniond rotvec2quaternion(const Eigen::Vector3d &rotvec) 
+    {
         double angle = 0.0;
         Eigen::Vector3d vec = Eigen::Vector3d::Zero();
         vec = rotvec.normalized();
@@ -92,11 +93,6 @@ public:
         return rotvec;
     }
 
-
-
-    
-    Rotation(/* args */);
-    ~Rotation();
 };
 
 #endif
