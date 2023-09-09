@@ -1,0 +1,1 @@
+/usr/bin/g++ -fPIC -g  -shared -Wl,-soname,libgilib.so -o libgilib.so CMakeFiles/gilib.dir/src/gi_lib.cpp.o 

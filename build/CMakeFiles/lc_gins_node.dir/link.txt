@@ -1,0 +1,1 @@
+/usr/bin/g++  -g  -rdynamic CMakeFiles/lc_gins_node.dir/lc_gins_node.cpp.o  -o lc_gins_node  -Wl,-rpath,/home/sh/MSFL/LC_GINS/build libgilib.so 

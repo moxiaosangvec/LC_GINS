@@ -2,7 +2,7 @@
  * @Author: moxiaosang_vec moxiaosang_vec@163.com
  * @Date: 2023-07-22 11:27:41
  * @LastEditors: moxiaosang_vec@.163.com moxiaosang_vec@163.com
- * @LastEditTime: 2023-09-03 22:23:56
+ * @LastEditTime: 2023-09-09 15:22:51
  * @FilePath: /LC_GINS/include/gi_lib.h
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -14,6 +14,9 @@
 #include "rotation.h"
 #include "gilib_interface.h"
 
+#include <vector>
+
+
 class GILib
 {
 private:
@@ -24,6 +27,8 @@ private:
     imu_t      imu_pre_;
     imu_t      imu_cur_;
     gnss_pos_t      gnss_pos_;
+
+    std::vector<imu_t> vec_imu_;
 
     imu_err_t  imu_err_;
     navflag_t  nav_flag_;
