@@ -1,8 +1,8 @@
 /*
  * @Author: moxiaosang_vec moxiaosang_vec@163.com
  * @Date: 2023-07-28 19:39:18
- * @LastEditors: moxiaosang_vec moxiaosang_vec@163.com
- * @LastEditTime: 2023-07-28 20:24:57
+ * @LastEditors: moxiaosang_vec@.163.com moxiaosang_vec@163.com
+ * @LastEditTime: 2023-09-10 16:00:17
  * @FilePath: /LC_GINS/include/rotation.h
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -91,6 +91,15 @@ public:
         angle_axis = Eigen::AngleAxisd(quaternion);
         rotvec = angle_axis.angle() * angle_axis.axis();
         return rotvec;
+    }
+    
+    Eigen::Matrix3d vec2skewsmt(const Eigen::Vector3d vec3)
+    {
+        Eigen::Matrix3d mat3 = Eigen::Matrix3d::Zero();
+        mat3 <<     0,      -vec3(2),   vec3(1),
+                vec3(2),        0,      -vec3(0),
+                -vec3(1),   vec3(0),    0;
+        return mat3;
     }
 
 };

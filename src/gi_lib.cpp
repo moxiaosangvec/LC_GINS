@@ -2,13 +2,12 @@
  * @Author: moxiaosang_vec moxiaosang_vec@163.com
  * @Date: 2023-07-21 21:50:29
  * @LastEditors: moxiaosang_vec@.163.com moxiaosang_vec@163.com
- * @LastEditTime: 2023-09-03 23:10:03
+ * @LastEditTime: 2023-09-14 01:06:54
  * @FilePath: /LC_GINS/src/lcgi_lib.cpp
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 
 #include "gi_lib.h"
-#include "mathcal.h"
 #include "gilib_interface.h"
 #include <Eigen/Core>
 
@@ -19,56 +18,88 @@
 GILib::GILib()
 {
     /* 完成数据初始化 */
-    time_stamp_ = 0.0;
-    imu_pre_.time = 0.0;
+    time_stamp_         = 0.0;
+
+    imu_pre_.time_stamp = 0.0;
     imu_pre_.acc.setZero();
     imu_pre_.gyro.setZero();
-    imu_cur_.time = 0.0;
+    imu_cur_.time_stamp = 0.0;
     imu_cur_.acc.setZero();
     imu_cur_.gyro.setZero();
-    memset(&nav_flag_, 0, sizeof(navflag_t));
-    err_.ba.setZero();
-    err_.bg.setZero();
-    err_.sa.setZero();
-    err_.sg.setZero();
-    err_.da.setZero();
-    err_.dr.setZero();
-    err_.dv.setZero();
+
+    gpos_.time_stamp = 0.0;
+    gpos_.blh.setZero();
+    gpos_.std.setZero();
+    gpos_.sat_num = 0;
+    gpos_.sol_type = SOLQ_NONE;
+
+    memset(&nav_log_, 0, sizeof(navlog_t));
+
+    fusion_nav_.time_stamp = 0;
     fusion_nav_.blh.setZero();
-    fusion_nav_.flag = 0;
     fusion_nav_.pos.setZero();
     fusion_nav_.att.setZero();
     fusion_nav_.qbn.setIdentity();
     fusion_nav_.Tbn.setIdentity();
     fusion_nav_.vel.setZero();
+
+    dr_nav_.blh.setZero();
+    dr_nav_.pos.setZero();
+    dr_nav_.vel.setZero();
+    dr_nav_.att.setZero();
+    dr_nav_.qbn.setIdentity();
+    dr_nav_.Tbn.setIdentity();
+    dr_nav_.time_stamp = 0.0;
+
+    P_.resize(STATE_DIM_, STATE_DIM_);
+    X_.resize(STATE_DIM_, 1);
 }
 
 
-status_t GILib::add_imu_data(void *imubuf, int size)
+status_t GILib::add_imu_data(void *imu_buf, int imu_size)
 {
     gins_imu_t imu = { 0 };
-    if (size != sizeof(gins_imu_t) || imubuf == nullptr) return GILIB_STATUS_FAIL;
-    memcpy(&imu, imubuf, sizeof(gins_imu_t));
-    imu_cur_.time = imu.time_stamp;
-    imu_cur_.gyro(0) = imu.gyro[0] * DEG2RAD;
-    imu_cur_.gyro(1) = imu.gyro[1] * DEG2RAD;
-    imu_cur_.gyro(2) = imu.gyro[2] * DEG2RAD;
+    if (imu_size != sizeof(gins_imu_t) || imu_buf == nullptr) return GILIB_STATUS_FAIL;
+    memcpy(&imu, imu_buf, sizeof(gins_imu_t));
+
+    imu_.time_stamp = imu.time_stamp;
+    for (size_t i = 0; i < 3; i++)
+    {
+        imu_.gyro[i] = imu.gyro[i] * DEG2RAD;
+        imu_.acc[i] = imu.acc[i];
+    }
+
+    if (deque_imu_.size() >= IMU_DEQUE_NUM_)
+    {
+        deque_imu_.pop_front();
+    }
+    deque_imu_.push_back(imu_);
+
     return GILIB_STATUS_OK;
 }
 
-status_t GILib::add_pos_data(void *posbuf, int size)
+status_t GILib::add_gpos_data(void *gpos_buf, int gpos_size)
 {
     gins_pos_t pos = { 0 };
-    if (size != sizeof(gins_pos_t) || posbuf == nullptr) return GILIB_STATUS_FAIL;
-    memcpy(&pos, posbuf, sizeof(gins_pos_t));
-    gnss_pos_.time_stamp = pos.time_stamp;
-    gnss_pos_.blh(0) = pos.blh[0] * DEG2RAD;
-    gnss_pos_.blh(1) = pos.blh[1] * DEG2RAD;
-    gnss_pos_.blh(2) = pos.blh[2];
-    gnss_pos_.sol_type = (solqtype_t)pos.postype;    /* 目前内外定义是一致的，可以直接转 */
-    gnss_pos_.std(0) = pos.std[0];
-    gnss_pos_.std(1) = pos.std[1];
-    gnss_pos_.std(2) = pos.std[2];
+    if (gpos_size != sizeof(gins_pos_t) || gpos_buf == nullptr) return GILIB_STATUS_FAIL;
+    memcpy(&pos, gpos_buf, sizeof(gins_pos_t));
+    
+    /* 外部接口数据定位转换至内部的定义 */
+    gpos_.time_stamp = pos.time_stamp;
+    gpos_.blh[0] = pos.blh[0] * DEG2RAD;
+    gpos_.blh[1] = pos.blh[1] * DEG2RAD;
+    gpos_.blh[2] = pos.blh[2];
+    gpos_.sol_type = (solqtype_t)pos.postype;    /* 目前内外定义是一致的，可以直接转 */
+    gpos_.std[0] = pos.std[0];
+    gpos_.std[1] = pos.std[1];
+    gpos_.std[2] = pos.std[2];
+    
+    if (deque_gpos_.size() >= GPOS_DEQUE_NUM_)
+    {
+        deque_gpos_.pop_front();
+    }
+    deque_gpos_.push_back(gpos_);
+
     return GILIB_STATUS_OK;
 }
 
@@ -87,21 +118,25 @@ status_t GILib::imu_compensate()
     return GILIB_STATUS_OK;
 }
 
-double GILib::getgravity()
+status_t GILib::earth_data_compute(const double lat, const double height)
 {
-    double lat = 0;
-    double h = 0;
-    double sin2 = 0;
-    double gravity = 0;
-    lat = fusion_nav_.blh(0);
-    h = fusion_nav_.blh(2);
-    sin2 = sin(lat);
-    sin2 *= sin2;
+    double l = lat;     /* {rad} */
+    double h = height;
+    double sqr_sinlat = 0;
+    
+    sqr_sinlat  = sin(l) * sin(l);
 
-    gravity = 9.7803267715 * (1 + 0.0052790414 * sin2 + 0.0000232718 * sin2 * sin2) +
-               h * (0.0000000043977311 * sin2 - 0.0000030876910891) + 0.0000000000007211 * h * h;
-    return gravity;
+    nav_log_.Rm = WGS84_RA * (1 - WGS84_SQR_E1) / (pow(1 - WGS84_SQR_E1 * sin(lat), 1.5));
+    nav_log_.Rn = WGS84_RA / pow(1 - WGS84_SQR_E1 * sin(lat), 0.5);
+    nav_log_.g  = 9.7803267715 * (1 + 0.0052790414 * sqr_sinlat + 
+                  0.0000232718 * sqr_sinlat * sqr_sinlat) +
+                  h * (0.0000000043977311 * sqr_sinlat - 0.0000030876910891) + 
+                  0.0000000000007211 * h * h;
+    nav_log_.wien   = { WGS84_WIE * cos(lat), 0, -WGS84_WIE * sin(lat) };
+
+    return GILIB_STATUS_OK;
 }
+
 
 /**
  * @description: IMU机械编排
@@ -116,8 +151,8 @@ status_t GILib::imu_mech()
     double H = 0.0;
     double g = 0.0;
     Eigen::Vector3d pos_ned         = Eigen::Vector3d::Zero();
-    Eigen::Vector3d vel_ned         = Eigen::Vector3d::Zero();
-    Eigen::Vector3d vel_ned_mid     = Eigen::Vector3d::Zero();
+    Eigen::Vector3d vel         = Eigen::Vector3d::Zero();
+    Eigen::Vector3d vel_mid     = Eigen::Vector3d::Zero();
     Eigen::Vector3d blh             = Eigen::Vector3d::Zero();
     Eigen::Vector3d blh_mid         = Eigen::Vector3d::Zero();
     Eigen::Matrix4d Tbn             = Eigen::Matrix4d::Zero();
@@ -142,23 +177,21 @@ status_t GILib::imu_mech()
 
     /* 0. 数据准备 */
     blh = fusion_nav_.blh;
-    vel_ned = fusion_nav_.vel;
+    vel = fusion_nav_.vel;
     qbn = fusion_nav_.qbn;
     Tbn = fusion_nav_.Tbn;
-    
-    Rm = WGS84_RA * (1 - WGS84_SQR_E1) / (pow(1 - WGS84_SQR_E1 * sin(blh(0)), 1.5));
-    Rn = WGS84_RA / pow(1 - WGS84_SQR_E1 * sin(blh(0)), 0.5);
-    H = blh(2);
-    w_ien = { WGS84_WIE * cos(blh(0)), 0, -WGS84_WIE * sin(blh(0)) };
-    w_enn(0) = vel_ned(1) / (Rn + H);
-    w_enn(1) = -vel_ned(0) / (Rm + H);
-    w_enn(2) = -vel_ned(1) * tan(blh(0)) / (Rn + H);
-    g = getgravity();
-    g_pn = { 0, 0, g };
+    Rm = nav_log_.Rm;
+    Rn = nav_log_.Rn;
+
+    w_enn(0) = vel(1) / (Rn + H);
+    w_enn(1) = -vel(0) / (Rm + H);
+    w_enn(2) = -vel(1) * tan(blh(0)) / (Rn + H);
+
+    g_pn = { 0, 0, nav_log_.g };
 
     /* 1. IMU姿态递推 */
     qbn = fusion_nav_.qbn;
-    dt = imu_cur_.time - imu_pre_.time; /* 暂时认为频率很稳定，不考虑dt的变化 */
+    dt = imu_cur_.time_stamp - imu_pre_.time_stamp; 
     dtheta_cur = imu_cur_.gyro * dt;
     dtheta_pre = imu_pre_.gyro * dt;
     dvcur      = imu_cur_.acc * dt;
@@ -175,47 +208,46 @@ status_t GILib::imu_mech()
     // qbn.normalized();
 
     /* 2. IMU速度递推 */
-    dv_gn = (g_pn - (2 * w_ien + w_enn).cross(vel_ned)) * dt;
+    dv_gn = (g_pn - (2 * w_ien + w_enn).cross(vel)) * dt;
     dv_fb = dvcur + 0.5 * dtheta_cur.cross(dvcur) + 
             1 / 12 * (dtheta_pre.cross(dvcur) + dvcur.cross(dtheta_cur));
-    dv_fn = (I3 - 0.5 * vec2mat_skewsmt(phin)) * Tbn.block<3, 3>(0, 0) * dv_fb;
-    vel_ned += dv_fn + dv_gn;
+    dv_fn = (I3 - 0.5 * rot_.vec2skewsmt(phin)) * Tbn.block<3, 3>(0, 0) * dv_fb;
+    vel += dv_fn + dv_gn;
 
     /* 3. IMU位置递推 */
-    vel_ned_mid = 0.5 * (vel_ned + fusion_nav_.vel);
-    blh(2) += -vel_ned_mid(2) * dt;
+    vel_mid = 0.5 * (vel + fusion_nav_.vel);
+    blh(2) += -vel_mid(2) * dt;
     blh_mid(2) = 0.5 * (blh(2) + fusion_nav_.blh(2));
-    blh(0) = blh(0) + vel_ned_mid(0) / (Rm + blh(2)) * dt;
+    blh(0) = blh(0) + vel_mid(0) / (Rm + blh(2)) * dt;
     blh_mid(0) = 0.5 * (blh(0) + fusion_nav_.blh(0));
-    blh(1) = blh(1) + vel_ned_mid(1) / ((Rn + blh(2)) * cos(blh(0))) * dt;
+    blh(1) = blh(1) + vel_mid(1) / ((Rn + blh(2)) * cos(blh(0))) * dt;
 
     /* 4. 将更新结果写入到状态变量 */
-    fusion_nav_.flag = nav_flag_.align_flag;
-    fusion_nav_.time_stamp = imu_cur_.time;
+    fusion_nav_.time_stamp = imu_cur_.time_stamp;
     fusion_nav_.qbn = qbn;
     fusion_nav_.Tbn.block<3, 3>(0, 0) = qbn.toRotationMatrix();
     fusion_nav_.att = rot_.quaternion2euler(qbn);
-    fusion_nav_.vel = vel_ned;
+    fusion_nav_.vel = vel;
     fusion_nav_.blh = blh;
     return ret;
 }
 
 
-status_t GILib::process_imu()
+status_t GILib::process_imu(void *inbuf, int insize)
 {
     /* 变量定义 */
-    Eigen::Matrix<double, 21, 21> F   = Eigen::Matrix<double, 21, 21>::Zero();      /* 连续方程误差状态矩阵 */
-    Eigen::Matrix<double, 21, 21> Phi = Eigen::Matrix<double, 21, 21>::Zero();      /* 离散方程状态转移矩阵 */
-    Eigen::Matrix<double, 21, 18> G   = Eigen::Matrix<double, 21, 18>::Zero();      /* 系统噪声驱动矩阵 */
-    Eigen::Matrix<double, 18, 18> Q   = Eigen::Matrix<double, 18, 18>::Zero();      /* 系统激励噪声矩阵 */
-    Eigen::Matrix<double, 21, 21> Qk  = Eigen::Matrix<double, 21, 21>::Zero();      /* 离散系统状态噪声方差阵 */
-    Eigen::Vector3d fb                = Eigen::Vector3d::Zero();
-    Eigen::Vector3d wibb              = Eigen::Vector3d::Zero();
-    Eigen::Vector3d w_ien             = Eigen::Vector3d::Zero();
-    Eigen::Vector3d w_enn             = Eigen::Vector3d::Zero();
-    Eigen::Matrix3d temp              = Eigen::Matrix3d::Zero();
-    Eigen::Matrix3d Cbn               = Eigen::Matrix3d::Zero();
-    Eigen::Matrix3d I                 = Eigen::Matrix3d::Zero();
+    Eigen::MatrixXd F;      /* 连续方程误差状态矩阵 */
+    Eigen::MatrixXd Phi;    /* 离散化的状态转移矩阵 */
+    Eigen::MatrixXd G;      /* 噪声驱动矩阵 */
+    Eigen::MatrixXd Q;      /* 输入噪声阵 */
+    Eigen::MatrixXd Qk;     /* 系统噪声矩阵 */
+    Eigen::Vector3d fb      = Eigen::Vector3d::Zero();
+    Eigen::Vector3d wibb    = Eigen::Vector3d::Zero();
+    Eigen::Vector3d w_ien   = Eigen::Vector3d::Zero();
+    Eigen::Vector3d w_enn   = Eigen::Vector3d::Zero();
+    Eigen::Matrix3d temp    = Eigen::Matrix3d::Zero();
+    Eigen::Matrix3d Cbn     = Eigen::Matrix3d::Zero();
+    Eigen::Matrix3d I       = Eigen::Matrix3d::Zero();
     double Rm = 0, Rn = 0;
     double g = 0;
     double lat = 0, lon = 0, h = 0;
@@ -225,6 +257,18 @@ status_t GILib::process_imu()
     double vrw = 0, arw = 0;
     double sigma_gb = 0, sigma_ab = 0, sigma_gs = 0, sigma_as = 0;
     double dt = 0;
+
+    /* 增加IMU数据 */
+    add_imu_data(inbuf, insize);
+    imu_pre_ = imu_cur_;
+    imu_cur_ = imu_;
+
+    /* 矩阵分配内存 */
+    F.resize(STATE_DIM_, STATE_DIM_);
+    Phi.resize(STATE_DIM_, STATE_DIM_);
+    G.resize(STATE_DIM_, NOISE_DIM_);    
+    Q.resize(NOISE_DIM_, NOISE_DIM_);
+    Qk.resize(STATE_DIM_, STATE_DIM_);
 
     /* 变量赋值 */
     lat     = fusion_nav_.blh(0);
@@ -241,19 +285,21 @@ status_t GILib::process_imu()
     Tgs     = cfg_.Tgs;
     Tas     = cfg_.Tas;
     I       = Eigen::Matrix3d::Identity();
-    dt      = imu_cur_.time - imu_pre_.time;
+    dt      = imu_cur_.time_stamp - imu_pre_.time_stamp;
+
+    /* 地球数据计算 */
+    earth_data_compute(lat, h);
+    Rm       = nav_log_.Rm; 
+    Rn       = nav_log_.Rn; 
+    g        = nav_log_.g;
+    w_ien    = nav_log_.wien;
 
     /* IMU数据补偿 */
     imu_compensate();
 
-    /* IMU机械编排 */
+    /* IMU机械编排,递推后即更新了fuison_nav_ */
     imu_mech();
 
-    /* 地球数据计算 */
-    Rm       = WGS84_RA * (1 - WGS84_SQR_E1) / (pow(1 - WGS84_SQR_E1 * sin(lat), 1.5));
-    Rn       = WGS84_RA / pow(1 - WGS84_SQR_E1 * sin(lat), 0.5);
-    g        = getgravity();
-    w_ien    = { WGS84_WIE * cos(lat), 0, -WGS84_WIE * sin(lat) };
     w_enn(0) = ve / (Rn + h);
     w_enn(1) = -vn / (Rm + h);
     w_enn(2) = -ve * tan(lat) / (Rn + h);
@@ -295,7 +341,7 @@ status_t GILib::process_imu()
     temp(2, 2) = 0;
     F.block<3, 3>(3, 3) = temp;
     
-    F.block<3, 3>(3, 6) = vec2mat_skewsmt(Cbn * fb);
+    F.block<3, 3>(3, 6) = rot_.vec2skewsmt(Cbn * fb);
     F.block<3, 3>(3, 12) = Cbn;
     F.block<3, 3>(3, 18) = -Cbn * fb.asDiagonal();
 
@@ -321,7 +367,7 @@ status_t GILib::process_imu()
     temp(2, 2) = 0;
     F.block<3, 3>(6, 3) = temp;
 
-    F.block<3, 3>(6, 6) = -vec2mat_skewsmt(w_ien + w_enn);
+    F.block<3, 3>(6, 6) = -rot_.vec2skewsmt(w_ien + w_enn);
     F.block<3, 3>(6, 9) = -Cbn;
     F.block<3, 3>(6, 15) = -Cbn * wibb.asDiagonal();
     F.block<3, 3>(9, 9) = -1 / Tgb * Eigen::Matrix3d::Identity();
@@ -345,10 +391,10 @@ status_t GILib::process_imu()
     G.block<3, 3>(15, 12) = Eigen::Matrix3d::Identity();
     G.block<3, 3>(18, 15) = Eigen::Matrix3d::Identity();
     
-    /* 状态转移矩阵离散化 */
+    /* 离散化状态转移矩阵 */
     Phi = Eigen::Matrix<double, 21, 21>::Identity() + F * dt;
 
-    /* 系统噪声阵计算 */
+    /* 离散化系统噪声阵计算 */
     Qk  = 0.5 * (Phi * G * Q * G.transpose() * Phi.transpose() + G * Q * G.transpose()) * dt;
 
     /* 卡尔曼滤波：状态预测和协方差预测 */
@@ -358,18 +404,8 @@ status_t GILib::process_imu()
     return GILIB_STATUS_OK;
 }
 
-status_t GILib::return_nav(navstate_t &navstate)
-{
-    status_t ret = GILIB_STATUS_NONE;
-    
-    navstate = fusion_nav_;
-    navstate.blh(0) = navstate.blh(0) * RAD2DEG;
-    navstate.blh(1) = navstate.blh(1) * RAD2DEG;
-    navstate.att = navstate.att * RAD2DEG;
-    return ret; 
-}
 
-status_t GILib::process_gnss()
+status_t GILib::process_gnss(void *gpos_buf, int gpos_size)
 {
     status_t        ret     = GILIB_STATUS_NONE;
     Eigen::Vector3d blh     = Eigen::Vector3d::Zero();
@@ -378,68 +414,58 @@ status_t GILib::process_gnss()
     Eigen::Matrix3d Cbn     = Eigen::Matrix3d::Zero();
     Eigen::Matrix3d Dr      = Eigen::Matrix3d::Zero();
     Eigen::Vector3d tmp     = Eigen::Vector3d::Zero();
-    Eigen::Vector3d dz      = Eigen::Vector3d::Zero();
+    Eigen::Vector3d Z       = Eigen::Vector3d::Zero();
     Eigen::Matrix<double, 21, 21> I = Eigen::Matrix<double, 21, 21>::Identity();
     Eigen::Matrix<double, 3 , 21> H = Eigen::Matrix<double, 3 , 21>::Zero(); 
     Eigen::Matrix<double, 3 ,  3> R = Eigen::Matrix<double, 3 ,  3>::Zero();
     Eigen::Matrix<double, 21,  3> K = Eigen::Matrix<double, 21,  3>::Zero();
     double          Rm      = 0;
     double          Rn      = 0;
-    double          g       = 0;
     double          lat     = 0;
     double          lon     = 0;
     double          h       = 0;
 
+    /* 增加gnss数据 */
+    add_gpos_data(gpos_buf, gpos_size);
+    gpos_cur_ = gpos_;
+
     /* 变量赋值 */
     blh     = fusion_nav_.blh;
-    std     = gnss_pos_.std;
+    std     = gpos_cur_.std;
     larm    = cfg_.vec_gnss_in_veh;
     Cbn     = fusion_nav_.Tbn.block<3, 3>(0, 0);
     lat     = fusion_nav_.blh(0);
     lon     = fusion_nav_.blh(1);
     h       = fusion_nav_.blh(2);
-    printf("nav_flag_.align_flag: %d\n", nav_flag_.align_flag);
-    if (nav_flag_.align_flag != TRUE)
+    Rm      = nav_log_.Rm;
+    Rn      = nav_log_.Rn;
+
+    if (nav_log_.align_flag != TRUE)
     {
         set_initstate();
         printf("set_init\n");
         return GILIB_STATUS_OK;
     }
     
-    /* 地球数据计算 */
-    Rm      = WGS84_RA * (1 - WGS84_SQR_E1) / (pow(1 - WGS84_SQR_E1 * sin(lat), 1.5));
-    Rn      = WGS84_RA / pow(1 - WGS84_SQR_E1 * sin(lat), 0.5);
-    g       = getgravity();
-
     /* 杆臂补偿 */
     tmp     = { 1 / (Rm + h), 1 / ((Rn + h) * cos(lat)), -1};
     Dr      = tmp.asDiagonal();
     blh     = blh + Dr.inverse() * Cbn * larm;  /* 把IMU补偿到RTK天线处 */
 
     /* 观测值，RTK处的位置差 */
-    dz      = Dr * (blh - gnss_pos_.blh);
+    Z       = Dr * (blh - gpos_cur_.blh);
 
     /* 观测矩阵 */
     H.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
-    H.block<3, 3>(0, 6) = vec2mat_skewsmt(Cbn * larm);
+    H.block<3, 3>(0, 6) = rot_.vec2skewsmt(Cbn * larm);
 
     /* 观测噪声阵 */
     R       = std.asDiagonal(); 
 
     /* 滤波更新 */
     K       = P_ * H.transpose() * (H * P_ * H.transpose() + R).inverse();
-    X_      = X_ + K * (dz - H * X_);
+    X_      = X_ + K * (Z - H * X_);
     P_      = (I - K * H) * P_ * (I - K * H).transpose() + K * R * K.transpose();
-
-    /* 状态保存 */
-    err_.dr = X_.block<3, 1>(0 , 0);
-    err_.dv = X_.block<3, 1>(3 , 0);
-    err_.da = X_.block<3, 1>(6 , 0);
-    err_.bg = X_.block<3, 1>(9 , 0);
-    err_.ba = X_.block<3, 1>(12, 0);
-    err_.sg = X_.block<3, 1>(15, 0);
-    err_.sa = X_.block<3, 1>(18, 0);
-
 
     return ret;
 }
@@ -452,18 +478,11 @@ status_t GILib::state_feedback()
     double          Rm      = 0;
     double          Rn      = 0;
     double          h       = 0;
-    double          g       = 0;
     double          lat     = 0;
-
-    /* 变量赋值 */
+    Rm      = nav_log_.Rm;
+    Rn      = nav_log_.Rn; 
     lat     = fusion_nav_.blh(0);
     h       = fusion_nav_.blh(2);
-
-    /* 地球数据计算 */
-    Rm      = WGS84_RA * (1 - WGS84_SQR_E1) / (pow(1 - WGS84_SQR_E1 * sin(lat), 1.5));
-    Rn      = WGS84_RA / pow(1 - WGS84_SQR_E1 * sin(lat), 0.5);
-    g       = getgravity();
-
     /* 得到经纬高和NED转换的矩阵 */
     tmp     = { 1 / (Rm + h), 1 / ((Rn + h) * cos(lat)), -1};
     Dr_inv  = tmp.asDiagonal();
@@ -495,22 +514,13 @@ status_t GILib::process(const prctype_t type, void* inbuf, int insize, void* out
     status_t ret = GILIB_STATUS_NONE;
     if (type == prctype_imu)
     {
-        memcpy(&imu_pre_, &imu_cur_, sizeof(imu_t)); 
-        add_imu_data(inbuf, insize);
-        if (TRUE == nav_flag_.align_flag)
-        {
-            if (imu_pre_.time > 0)
-            {
-                ret = process_imu();
-            }
-        }
+        ret = process_imu(inbuf, insize);
     }
     if (type == prctype_gpos)
     {
-        add_pos_data(inbuf, insize);
-
-        ret = process_gnss();
+        ret = process_gnss(inbuf, insize);
     }
+
     return ret;
 }
 
@@ -522,21 +532,27 @@ status_t GILib::load_conf(const cfgtype_t type, void *inbuf, int insize)
 
 status_t GILib::set_initstate()
 {
-    if (fabs(gnss_pos_.time_stamp - imu_cur_.time) < 0.01)
+    if (fabs(gpos_.time_stamp - imu_cur_.time_stamp) < 0.01)
     {
-        fusion_nav_.time_stamp = gnss_pos_.time_stamp;
-        fusion_nav_.blh = gnss_pos_.blh;
+        fusion_nav_.time_stamp = gpos_.time_stamp;
+        fusion_nav_.blh = gpos_.blh;
         fusion_nav_.pos.setZero();
         fusion_nav_.att.setZero();
         fusion_nav_.vel.setZero();
         fusion_nav_.Tbn.setIdentity();
         fusion_nav_.qbn.setIdentity();
-        fusion_nav_.flag = TRUE;
-        nav_flag_.align_flag = TRUE;
-        // #ifdef DEBUG_MODE
-            printf("init finish!\n");
-        // #endif
+        nav_log_.align_flag = TRUE;
     }
 
+    return GILIB_STATUS_OK;
+}
+status_t GILib::gilib_output(void *outbuf, int outsize)
+{
+    gins_navout_t nav_out = { 0 };
+    
+    if (outsize < sizeof(gins_navout_t)) return GILIB_STATUS_FAIL;
+
+    /* 输出结果 */
+    memcpy(outbuf, &nav_out, outsize);
     return GILIB_STATUS_OK;
 }

@@ -2,14 +2,13 @@
  * @Author: moxiaosang_vec moxiaosang_vec@163.com
  * @Date: 2023-03-16 02:27:44
  * @LastEditors: moxiaosang_vec@.163.com moxiaosang_vec@163.com
- * @LastEditTime: 2023-09-03 23:07:05
+ * @LastEditTime: 2023-09-14 01:08:03
  * @FilePath: /ESKF-LCGINS/main.cpp
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 #include <iostream>
 #include <fstream>
 #include <string.h>
-#include "common.h"
 #include "gi_lib.h"
 
 
@@ -120,29 +119,11 @@ int main(int argc, char** argv) {
             // printf("log gpos\n");
             log.sys_time = gpos.time_stamp;
             log.prctype  = prctype_gpos;
-            ret = gilib.process(prctype_gpos, &gpos, sizeof(gnss_pos_t), NULL, 0);
+            ret = gilib.process(prctype_gpos, &gpos, sizeof(gpos_t), NULL, 0);
             decode_gpos(fpin_gnss, gpos);
         }
-
-        ret = gilib.return_nav(nav);
-        if (TRUE == nav.flag && nav.time_stamp > 1e-6)
-        {
-            fprintf(fpout_result, "%.3lf", nav.time_stamp);
-            fprintf(fpout_result, "   %.10lf %.10lf %.10lf", nav.blh[0], nav.blh[1], nav.blh[2]);
-            fprintf(fpout_result, "   %.5lf %.5lf %.5lf", nav.vel[0], nav.vel[1], nav.vel[2]);
-            fprintf(fpout_result, "   %.5lf %.5lf %.5lf", nav.att[0], nav.att[1], nav.att[2]);
-            fprintf(fpout_result, "\n");
-        }
-        #ifdef DEBUG_MODE
-            // printf("syslog: [time]%.3lf, [type]:%d, ", log.sys_time, (int)log.prctype);
-            // printf("%.3lf, ", nav.time_stamp);
-            // printf("%.12lf, %.12lf, %.5lf, ", nav.blh[0], nav.blh[1], nav.blh[2]);
-            // printf("%.5lf, %.5lf, %.5lf, ", nav.vel[0], nav.vel[1], nav.vel[2]);
-            // printf("\n");
-        #endif
     }
 
-    //
     fclose(fpin_imu);
     fclose(fpin_gnss);
     fclose(fpout_result);
