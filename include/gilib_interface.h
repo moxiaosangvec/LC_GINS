@@ -2,7 +2,7 @@
  * @Author: moxiaosang_vec@.163.com moxiaosang_vec@163.com
  * @Date: 2023-08-12 21:13:51
  * @LastEditors: moxiaosang_vec@.163.com moxiaosang_vec@163.com
- * @LastEditTime: 2023-09-10 11:00:10
+ * @LastEditTime: 2023-09-19 21:54:16
  * @FilePath: /LC_GINS/include/gilib_interface.h
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -32,6 +32,16 @@ typedef enum gins_solq_t
     GINS_SOLQ_UNKNOWN       = 10,           /* 未知解类型 */
     GINS_SOLQ_ENUM_END      = 0xFFFFFFFF,   /* 枚举结束位{4byte} */
 } gins_solq_t;
+
+
+typedef struct gins_cfg_t
+{
+    int         gnss_base_flg;      /* gnss基站配置标志 */
+    double      gnss_base[3];       /* gnss基站 lat,lon,height {deg,deg,m} */
+    double      T_imu_to_veh[4][4]; /* imu相当于车辆的外参, T * imu_b = imu_n */
+    double      vec_gnss_to_veh[3]; /* gnss相对于车辆的杆臂，*/
+} gins_cfg_t;
+
 
 /* GILIB IMU数据输入 */
 typedef struct gins_imu_t
